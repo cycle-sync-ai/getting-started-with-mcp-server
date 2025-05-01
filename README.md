@@ -1,188 +1,130 @@
-# Building MCP Servers: Part 1 — Getting Started with Resources
+# Building MCP Servers: Part 2 — Extending Resources with Resource Templates
 
-This tutorial walks you through setting up a basic MCP (Model Context Protocol) server to expose read-only resources to Large Language Models (LLMs) like Claude. You’ll learn what MCP is, why resources are useful, and how to initialize a Node.js/TypeScript project with the `@modelcontextprotocol/sdk`.
+This README summarizes Part 2 of the “Building MCP Servers” tutorial by Christopher Strolia-Davis. In this step we extend our server’s capabilities using **resource templates**.
 
 ## Table of Contents
 
-- [What is Model Context Protocol?](#what-is-model-context-protocol)
-- [What are MCP Resources?](#what-are-mcp-resources)
-- [Why Use Resources?](#why-use-resources)
-- [Example Servers](#example-servers)
-  - [Documentation Server](#documentation-server)
-  - [Log Analysis Server](#log-analysis-server)
-  - [Customer Data Server](#customer-data-server)
-- [Getting Started](#getting-started)
-  - [Prerequisites](#prerequisites)
-  - [Installation](#installation)
-  - [Project Setup](#project-setup)
-- [Next Steps](#next-steps)
-- [MCP Tools (Dynamic Actions)](#mcp-tools-dynamic-actions)
-- [Tools vs Prompts](#tools-vs-prompts)
-- [Complete Our Greeting Server](#complete-our-greeting-server)
+- [What are Resource Templates?](#what-are-resource-templates)
+- [Why Use Resource Templates?](#why-use-resource-templates)
+- [Adding the New Resource](#adding-the-new-resource)
+- [Handler Organization](#handler-organization)
+- [Template Definition](#template-definition)
+- [Template Handling](#template-handling)
+- [Testing with the Inspector](#testing-with-the-inspector)
+- [Testing with Claude Desktop](#testing-with-claude-desktop)
+- [What’s Next?](#whats-next)
 - [Sources & Additional Reading](#sources--additional-reading)
-- [License](#license)
 
-## What is Model Context Protocol?
+---
 
-The Model Context Protocol (MCP) is a standardized interface that allows LLMs to safely interact with external data and services. With MCP, you can expose files, databases, APIs, and more to your AI models in a controlled manner.
+## What are Resource Templates?
 
-## What are MCP Resources?
+Resource templates allow you to define dynamic resources using URI patterns. Unlike static resources with fixed URIs, templates let you generate content on demand based on parameters.
 
-Resources are read-only endpoints that expose content (text or binary) via a unique URI. Examples include:
+## Why Use Resource Templates?
 
-- `file:///path/to/file.txt`
-- `database://users/123`
-- `api://weather/latest`
+- Handle dynamic data dynamically
+- Generate content on demand
+- Create parameter-based resources
 
-Each resource has metadata like a display name and MIME type.
+## Adding the New Resource
 
-## Why Use Resources?
-
-Resources enable LLMs to:
-
-- Read files and databases
-- Execute commands
-- Access APIs
-- Interact with local tools
-
-All interactions require explicit user permission, ensuring security and auditability.
-
-## Example Servers
-
-### Documentation Server
-
-Expose your documentation:
-
-```txt
-docs://api/reference     → API documentation
-docs://guides/getting-started  → User guides
-```
-
-### Log Analysis Server
-
-Serve system logs:
-
-```txt
-logs://system/today      → Today's logs
-logs://errors/recent     → Recent error messages
-```
-
-### Customer Data Server
-
-Provide customer insights:
-
-```txt
-customers://profiles/summary   → Customer overview
-customers://feedback/recent    → Latest feedback
-```
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js (>= 16)
-- npm (>= 8)
-- TypeScript
-
-### Installation
-
-```bash
-mkdir hello-mcp
-cd hello-mcp
-npm init -y
-npm install @modelcontextprotocol/sdk
-npm install -D typescript @types/node
-```
-
-### Project Setup
-
-1. Update `package.json`:
-
-   ```json
-   {
-     "name": "hello-mcp",
-     "version": "1.0.0",
-     "type": "module",
-     "scripts": {
-       "build": "tsc",
-       "test": "echo \"Error: no test specified\" && exit 1"
-     },
-     "dependencies": {
-       "@modelcontextprotocol/sdk": "^1.1.0"
-     },
-     "devDependencies": {
-       "typescript": "^5.7.2",
-       "@types/node": "^22.10.5"
-     }
-   }
-   ```
-
-2. Create `tsconfig.json`:
-
-   ```json
-   {
-     "compilerOptions": {
-       "target": "ES2022",
-       "module": "Node16",
-       "moduleResolution": "Node16",
-       "outDir": "./build",
-       "rootDir": "./src",
-       "strict": true,
-       "esModuleInterop": true,
-       "skipLibCheck": true,
-       "forceConsistentCasingInFileNames": true
-     },
-     "include": ["src/**/*"]
-   }
-   ```
-
-3. Create a `src/` directory and start coding your MCP server.
-
-## Next Steps
-
-Check out Part 2 for configuring transports and advanced features.
-
-## MCP Tools (Dynamic Actions)
-
-MCP Tools (also called dynamic actions) let you define custom functions that the LLM can call during a session, extending MCP’s capabilities beyond static resources.
-
-## Tools vs Prompts
-
-| Aspect      | MCP Tools               | Prompts                 |
-| ----------- | ----------------------- | ----------------------- |
-| Capability  | Executes code & actions | Static natural language |
-| Security    | Controlled & auditable  | No external effects     |
-| Flexibility | High (custom logic)     | Limited to inference    |
-
-## Complete Our Greeting Server
-
-Below is a simple example of a greeting server exposing a greeting resource:
+In `src/handlers.ts`, add a `ListResourceTemplatesRequestSchema` handler:
 
 ```ts
-import { ResourceServer } from "@modelcontextprotocol/sdk";
-
-const server = new ResourceServer({ port: 3000 });
-
-server.addResource({
-  uri: "greeting://hello",
-  displayName: "Greeting Resource",
-  fn: async (req) => {
-    const name = req.query.name || "World";
-    return `Hello, ${name}!`;
-  },
-});
-
-server.listen(() => console.log("Greeting server running on port 3000"));
+server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
+  resourceTemplates: [
+    {
+      uriTemplate: "greetings://{name}",
+      name: "Personal Greeting",
+      description: "A personalized greeting message",
+      mimeType: "text/plain",
+    },
+  ],
+}));
 ```
+
+Then extend the `ReadResourceRequestSchema` handler to match templates:
+
+```ts
+server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  const greetingExp = /^greetings:\/\/(.+)$/;
+  const match = request.params.uri.match(greetingExp);
+  if (match) {
+    const name = decodeURIComponent(match[1]);
+    return {
+      contents: [
+        {
+          uri: request.params.uri,
+          text: `Hello, ${name}! Welcome to MCP.`,
+        },
+      ],
+    };
+  }
+  // existing static handler...
+});
+```
+
+## Handler Organization
+
+- `ListResourcesRequestSchema` → static resources
+- `ReadResourceRequestSchema` → static resource content
+- `ListResourceTemplatesRequestSchema` → available templates
+- `ReadResourceRequestSchema` → dynamic template handling
+
+## Template Definition
+
+Templates follow [RFC 6570](https://www.rfc-editor.org/rfc/rfc6570) syntax. Metadata includes:
+
+- `uriTemplate`
+- `name`
+- `description`
+- `mimeType`
+
+## Template Handling
+
+Use a regex to extract parameters from the URI and generate dynamic content in the handler.
+
+## Testing with the Inspector
+
+```bash
+npx @modelcontextprotocol/inspector node build/index.js
+```
+
+1. Open **Resource Templates** tab
+2. Select **Personal Greeting**
+3. Try:
+
+```json
+{ "name": "Alice" }
+```
+
+Expect:
+
+```json
+{
+  "contents": [
+    {
+      "uri": "greetings://Alice",
+      "text": "Hello, Alice! Welcome to MCP."
+    }
+  ]
+}
+```
+
+## Testing with Claude Desktop
+
+```bash
+npx tsc
+```
+
+Test resources and templates in MCP-aware tools (e.g., Cline).
+
+## What’s Next?
+
+In Part 3, we’ll add **prompt** capabilities to our MCP server.
 
 ## Sources & Additional Reading
 
-- [MCP Prompts](https://modelcontextprotocol.io/docs/concepts/prompts)
-- [unichat-mcp-server](https://github.com/amidabuddha/unichat-mcp-server)
-- [Claude Prompt Engineering](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/overview)
-- [10 Prompt Engineering Best Practices](https://dev.to/get_pieces/10-prompt-engineering-best-practices-23dk)
-- [Prompting Guide](https://promptingguide.ai)
-
-## License
-
-MIT
+- [Building MCP Servers: Part 2 — Extending Resources with Resource Templates](https://medium.com/@cstroliadavis/building-mcp-servers-315917582ad1)
+- [RFC 6570](https://www.rfc-editor.org/rfc/rfc6570)
