@@ -12,6 +12,7 @@ const server = new Server(
     capabilities: {
       prompts: {},
       resources: {},
+      tools: {},
     },
   }
 );

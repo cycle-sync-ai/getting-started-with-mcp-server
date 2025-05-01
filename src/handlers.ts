@@ -1,10 +1,13 @@
 import { type Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
+  CallToolRequestSchema,
   GetPromptRequestSchema,
   ListPromptsRequestSchema,
   ListResourcesRequestSchema,
   ListResourceTemplatesRequestSchema,
+  ReadResourceResultSchema,
   ReadResourceRequestSchema,
+  ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { getResourceHandler, resources } from "./resoures.js";
 import {
@@ -12,6 +15,7 @@ import {
   getResoureTemplateHandler,
 } from "./resource-templates.js";
 import { promptHandlers, prompts } from "./prompts.js";
+import { toolHandlers, tools } from "./tools.js";
 
 export const setupHandlers = (server: Server): void => {
   // List available resources when clients request them
@@ -47,5 +51,20 @@ export const setupHandlers = (server: Server): void => {
     if (promptHandler)
       return promptHandler(args as { name: string; style?: string });
     throw new Error("Prompt not found");
+  });
+
+  // tools
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: Object.values(tools),
+  }));
+
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    type ToolHandlerKey = keyof typeof toolHandlers;
+    const { name, arguments: params } = request.params ?? {};
+    const handler = toolHandlers[name as ToolHandlerKey];
+    if (!handler) throw new Error("Tool not found");
+
+    type HandlerParams = Parameters<typeof handler>;
+    return handler(...([params] as HandlerParams));
   });
 };
